@@ -33,10 +33,10 @@ pub mod pallet {
 	// The pallet's runtime storage items.
 	// https://docs.substrate.io/v3/runtime/storage
 	#[pallet::storage]
-	#[pallet::getter(fn something)]
+	#[pallet::getter(fn block_map)]
 	// Learn more about declaring storage items:
 	// https://docs.substrate.io/v3/runtime/storage#declaring-storage-items
-	pub type Something<T> = StorageValue<_, u32>;
+	pub(super) type BlockMap<T: Config> = StorageMap<_, Blake2_128Concat, T::BlockNumber, u32, ValueQuery>;
 
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
@@ -57,46 +57,56 @@ pub mod pallet {
 		StorageOverflow,
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
-	#[pallet::call]
-	impl<T: Config> Pallet<T> {
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
-		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/v3/runtime/origins
-			let who = ensure_signed(origin)?;
+    // Define some logic that should be executed
+    // regularly in some context, for e.g. on_initialize.
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 
-			// Update storage.
-			<Something<T>>::put(something);
-
-			// Emit an event.
-			Self::deposit_event(Event::SomethingStored(something, who));
-			// Return a successful DispatchResultWithPostInfo
-			Ok(())
+		fn on_finalize(block_number: T::BlockNumber){
+			BlockMap::<T>::insert(block_number, 1u32);
 		}
 
-		/// An example dispatchable that may throw a custom error.
-		#[pallet::weight(10_000 + T::DbWeight::get().reads_writes(1,1))]
-		pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
-			let _who = ensure_signed(origin)?;
-
-			// Read a value from storage.
-			match <Something<T>>::get() {
-				// Return an error if the value has not been set.
-				None => Err(Error::<T>::NoneValue)?,
-				Some(old) => {
-					// Increment the value read from storage; will error in the event of overflow.
-					let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-					// Update the value in storage with the incremented result.
-					<Something<T>>::put(new);
-					Ok(())
-				},
+		fn offchain_worker(block_number: T::BlockNumber){
+			if block_number % 2u32.into() != 0u32.into() {
+				log::info!("Hello World!");
+				return
 			}
+			let mut fee_sum = 0u32;
+			for (key, val) in BlockMap::<T>::iter(){
+				log::info!("Found Key {:?} and Value {:?}", key, val);
+				fee_sum += val;
+			}
+			log::info!("Total Transaction Fees: {:?}", fee_sum);
+
+			// let end_block = block_number - 1u32.into();
+			// let prev_hash = <frame_system::Pallet<T>>::block_hash(end_block.clone());
+			// log::info!("prev hash: {:?}", prev_hash);
 		}
+		
 	}
+
+
+	// // Dispatchable functions allows users to interact with the pallet and invoke state changes.
+	// // These functions materialize as "extrinsics", which are often compared to transactions.
+	// // Dispatchable functions must be annotated with a weight and must return a DispatchResult.
+	// #[pallet::call]
+	// impl<T: Config> Pallet<T> {
+	// 	/// An example dispatchable that takes a singles value as a parameter, writes the value to
+	// 	/// storage and emits an event. This function must be dispatched by a signed extrinsic.
+	// 	#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
+	// 	pub fn on_finalize(origin: OriginFor<T>, something: u32, block_number: T::BlockNumber) -> DispatchResult {
+	// 		// Check that the extrinsic was signed and get the signer.
+	// 		// This function will return an error if the extrinsic is not signed.
+	// 		// https://docs.substrate.io/v3/runtime/origins
+	// 		let who = ensure_signed(origin)?;
+
+	// 		// Update storage.
+	// 		BlockMap::<T>::insert(block_number, 1u32);
+
+	// 		// Emit an event.
+	// 		Self::deposit_event(Event::SomethingStored(something, who));
+	// 		// Return a successful DispatchResultWithPostInfo
+	// 		Ok(())
+	// 	}
+	// }
 }
