@@ -269,6 +269,8 @@ impl pallet_sudo::Config for Runtime {
 /// Configure the pallet-template in pallets/template.
 impl pallet_template::Config for Runtime {
 	type Event = Event;
+	type BalancesEvent = Event;
+	type Balance = Balance;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
