@@ -215,31 +215,28 @@ pub mod pallet {
 			}
 		}
 
-		fn reset_storage(){
+		fn send_fees_to_sequester(block_num: T::BlockNumber){
+			// get lock so that another ocw doesn't modify the value mid-send
 			let mut lock = StorageLock::<Time>::new(&DB_LOCK);
 			{
 				let _guard = lock.lock();
 				let val = StorageValueRef::persistent(&DB_KEY_SUM);
-				let zero_bal:<T as Config>::Balance = Zero::zero(); 
-				val.set(&zero_bal);
+				let fees_to_send = val.get::<<T as Config>::Balance>();
+				match fees_to_send {
+					Ok(Some(fetched_fees)) => {
+						let call = Call::<T>::submit_unsigned{amount: fetched_fees, block_num: block_num};
+						SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
+						.map_err(|_| {
+							log::error!("Failed in offchain_unsigned_tx");
+						});
+						log::error!("resetting storage value");
+						let zero_bal:<T as Config>::Balance = Zero::zero(); 
+						val.set(&zero_bal);
+					},
+					_ => {},
+				};
 			}
-		}
 
-		fn send_fees_to_sequester(block_num: T::BlockNumber){
-			let val = StorageValueRef::persistent(&DB_KEY_SUM);
-			let fees_to_send = val.get::<<T as Config>::Balance>();
-			match fees_to_send {
-				Ok(Some(fetched_fees)) => {
-					let call = Call::<T>::submit_unsigned{amount: fetched_fees, block_num: block_num};
-					SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
-					.map_err(|_| {
-						log::error!("Failed in offchain_unsigned_tx");
-					});
-					log::error!("resetting storage value");
-					Self::reset_storage();
-				},
-				_ => {},
-			};
 		}
 
 	}
