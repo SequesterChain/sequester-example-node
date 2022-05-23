@@ -32,7 +32,7 @@ pub mod pallet {
 
 	const DB_KEY_SUM: &[u8] = b"donations/txn-fee-sum";
 	const DB_LOCK: &[u8] = b"donations/txn-sum-lock";
-	const SEND_INTERVAL: u32 = 20;
+	const SEND_INTERVAL: u32 = 10;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -41,6 +41,18 @@ pub mod pallet {
 		type BalancesEvent: From<<Self as frame_system::Config>::Event> + TryInto<pallet_balances::Event<Self>>;
 		type Balance: AtLeast32BitUnsigned + Saturating + Codec + TypeInfo + Default + Debug + Copy + From<<Self as pallet_balances::Config>::Balance>;
 	}
+
+	// `SignedSubmissions` items end here.
+
+	/// The minimum score that each 'untrusted' solution must attain in order to be considered
+	/// feasible.
+	///
+	/// Can be set via `set_minimum_untrusted_score`.
+	#[pallet::type_value]
+	pub(super) fn DefaultNextUnsigned<T: Config>() -> T::BlockNumber { T::BlockNumber::from(0u32) }
+	#[pallet::storage]
+	#[pallet::getter(fn next_unsigned_at)]
+	pub(super) type NextUnsignedAt<T: Config> = StorageValue<_, T::BlockNumber, ValueQuery, DefaultNextUnsigned<T>>;
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
@@ -92,6 +104,17 @@ pub mod pallet {
 					_ => return InvalidTransaction::Call.into(),
 				}
 
+				// Reject outdated txns
+				let next_unsigned_at = Self::next_unsigned_at();
+				if &next_unsigned_at > block_num {
+					return InvalidTransaction::Stale.into();
+				}
+				// Reject txns from the future
+				let current_block = <frame_system::Pallet<T>>::block_number();
+				if &current_block < block_num {
+					return InvalidTransaction::Future.into();
+				}
+
 				log::info!("unsigned transaction -- sending {:?} to sequester", amount);
 
 				ValidTransaction::with_tag_prefix("Donations")
@@ -118,6 +141,7 @@ pub mod pallet {
 			ensure_none(origin)?;
 			// TODO (once chain is live): send XCM transfer to Sequester here
 			Self::deposit_event(Event::TxnFeeSent(amount));
+			<NextUnsignedAt<T>>::put(block_num + T::BlockNumber::from(SEND_INTERVAL));
 			Ok(None.into())
 		}
 	}
