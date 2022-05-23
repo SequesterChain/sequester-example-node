@@ -228,6 +228,7 @@ pub mod pallet {
 						SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
 						.map_err(|_| {
 							log::error!("Failed in offchain_unsigned_tx");
+							return;
 						});
 						log::error!("resetting storage value");
 						let zero_bal:<T as Config>::Balance = Zero::zero(); 
