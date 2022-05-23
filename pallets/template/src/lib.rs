@@ -42,12 +42,7 @@ pub mod pallet {
 		type Balance: AtLeast32BitUnsigned + Saturating + Codec + TypeInfo + Default + Debug + Copy + From<<Self as pallet_balances::Config>::Balance>;
 	}
 
-	// `SignedSubmissions` items end here.
-
-	/// The minimum score that each 'untrusted' solution must attain in order to be considered
-	/// feasible.
-	///
-	/// Can be set via `set_minimum_untrusted_score`.
+	// The next block where an unsigned transaction will be considered valid
 	#[pallet::type_value]
 	pub(super) fn DefaultNextUnsigned<T: Config>() -> T::BlockNumber { T::BlockNumber::from(0u32) }
 	#[pallet::storage]
@@ -115,7 +110,7 @@ pub mod pallet {
 					return InvalidTransaction::Future.into();
 				}
 
-				log::info!("unsigned transaction -- sending {:?} to sequester", amount);
+				log::info!("valid unsigned transaction -- sending {:?} to sequester", amount);
 
 				ValidTransaction::with_tag_prefix("Donations")
 					// The higher the amount, the higher urgency to send.
