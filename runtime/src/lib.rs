@@ -266,11 +266,18 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
+parameter_types! {
+	pub const UnsignedPriority: u64 = 99999999;
+	pub const SendInterval: BlockNumber = 10;
+}
+
 /// Configure the pallet-template in pallets/template.
 impl pallet_template::Config for Runtime {
 	type Event = Event;
 	type BalancesEvent = Event;
 	type Balance = Balance;
+	type UnsignedPriority = UnsignedPriority;
+	type SendInterval = SendInterval;
 }
 
 impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime

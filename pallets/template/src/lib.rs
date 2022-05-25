@@ -32,7 +32,6 @@ pub mod pallet {
 
 	const DB_KEY_SUM: &[u8] = b"donations/txn-fee-sum";
 	const DB_LOCK: &[u8] = b"donations/txn-sum-lock";
-	const SEND_INTERVAL: u32 = 10;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -40,6 +39,17 @@ pub mod pallet {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 		type BalancesEvent: From<<Self as frame_system::Config>::Event> + TryInto<pallet_balances::Event<Self>>;
 		type Balance: AtLeast32BitUnsigned + Saturating + Codec + TypeInfo + Default + Debug + Copy + From<<Self as pallet_balances::Config>::Balance>;
+		
+		// constants
+
+		// Transaction priority for the unsigned transactions
+		#[pallet::constant]
+		type UnsignedPriority: Get<TransactionPriority>;
+
+		// Interval (in blocks) at which we send fees to sequester and reset the
+		// txn-fee-sum variable
+		#[pallet::constant]
+		type SendInterval: Get<Self::BlockNumber>;
 	}
 
 	// The next block where an unsigned transaction will be considered valid
@@ -53,17 +63,14 @@ pub mod pallet {
 	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
 
-	// Pallets use events to inform users when important changes are made.
-	// https://docs.substrate.io/v3/runtime/events-and-errors
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
+		/// Transaction fee has been sent from the treasury to Sequester with
+		/// amount: Balance
 		TxnFeeSent(<T as Config>::Balance),
 	}
 
-	// Errors inform users that something went wrong.
 	#[pallet::error]
 	pub enum Error<T> {
 		/// Error names should be descriptive.
@@ -78,10 +85,14 @@ pub mod pallet {
 		// and append that amount to a counter in local storage, which we will empty
 		// when it is time to send the txn fees to Sequester.
 		fn offchain_worker(block_number: T::BlockNumber){
-			Self::calculate_fees_and_update_storage();
+			let block_fee_sum = Self::calculate_fees_for_block();
+
+			log::info!("total fees for block!!: {:?}", block_fee_sum);
+
+			Self::update_storage(block_fee_sum);
 
 			// send fees to sequester
-			if (block_number % T::BlockNumber::from(SEND_INTERVAL)).is_zero() {
+			if (block_number % T::SendInterval::get()).is_zero() {
 				Self::send_fees_to_sequester(block_number);
 			}
 		}
@@ -113,8 +124,7 @@ pub mod pallet {
 				log::info!("valid unsigned transaction -- sending {:?} to sequester", amount);
 
 				ValidTransaction::with_tag_prefix("Donations")
-					// The higher the amount, the higher urgency to send.
-					.priority(9999999u64)
+					.priority(T::UnsignedPriority::get())
 					// We don't propagate this. This can never be validated at a remote node.
 					.propagate(false)
 					.build()
@@ -136,20 +146,12 @@ pub mod pallet {
 			ensure_none(origin)?;
 			// TODO (once chain is live): send XCM transfer to Sequester here
 			Self::deposit_event(Event::TxnFeeSent(amount));
-			<NextUnsignedAt<T>>::put(block_num + T::BlockNumber::from(SEND_INTERVAL));
+			<NextUnsignedAt<T>>::put(block_num + T::SendInterval::get());
 			Ok(None.into())
 		}
 	}
 	
 	impl<T: Config> Pallet<T> {
-		fn calculate_fees_and_update_storage(){
-			let block_fee_sum = Self::calculate_fees_for_block();
-
-			log::info!("total fees for block!!: {:?}", block_fee_sum);
-
-			Self::update_storage(block_fee_sum);
-		}
-
 		fn calculate_fees_for_block() -> <T as Config>::Balance {
 			let events = <frame_system::Pallet<T>>::read_events_no_consensus();
 
@@ -219,15 +221,19 @@ pub mod pallet {
 				let fees_to_send = val.get::<<T as Config>::Balance>();
 				match fees_to_send {
 					Ok(Some(fetched_fees)) => {
-						let call = Call::<T>::submit_unsigned{amount: fetched_fees, block_num: block_num};
-						SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
-						.map_err(|_| {
-							log::error!("Failed in offchain_unsigned_tx");
-							return;
+						let call = Call::<T>::submit_unsigned{amount: fetched_fees, block_num};
+						let txn_res = SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into()).map_err(|_| {
 						});
-						log::error!("resetting storage value");
-						let zero_bal:<T as Config>::Balance = Zero::zero(); 
-						val.set(&zero_bal);
+						match txn_res {
+							Ok(_) => {
+								log::info!("resetting storage value");
+								let zero_bal:<T as Config>::Balance = Zero::zero(); 
+								val.set(&zero_bal);
+							},
+							Err(_) => {
+								log::error!("Failed in offchain_unsigned_tx");
+							}
+						}
 					},
 					_ => {},
 				};
