@@ -1,11 +1,16 @@
-use crate as pallet_template;
-use frame_support::traits::{ConstU16, ConstU64};
-use frame_system as system;
-use sp_core::H256;
-use sp_runtime::{
-	testing::Header,
-	traits::{BlakeTwo256, IdentityLookup},
+use crate as sequester_pallet;
+use frame_support::{
+	parameter_types,
+	traits::{ConstU32, ConstU64},
 };
+use frame_system as system;
+
+use sp_runtime::traits::IdentityLookup;
+
+type AccountId = u64;
+type AccountIndex = u32;
+type BlockNumber = u64;
+type Balance = u64;
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 type Block = frame_system::mocking::MockBlock<Test>;
@@ -18,7 +23,8 @@ frame_support::construct_runtime!(
 		UncheckedExtrinsic = UncheckedExtrinsic,
 	{
 		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		TemplateModule: pallet_template::{Pallet, Call, Storage, Event<T>},
+		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
+		TemplateModule: sequester_pallet::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
@@ -28,29 +34,60 @@ impl system::Config for Test {
 	type BlockLength = ();
 	type DbWeight = ();
 	type Origin = Origin;
+	type Index = AccountIndex;
+	type BlockNumber = BlockNumber;
 	type Call = Call;
-	type Index = u64;
-	type BlockNumber = u64;
-	type Hash = H256;
-	type Hashing = BlakeTwo256;
-	type AccountId = u64;
+	type Hash = sp_core::H256;
+	type Hashing = ::sp_runtime::traits::BlakeTwo256;
+	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
-	type Header = Header;
+	type Header = sp_runtime::testing::Header;
 	type Event = Event;
-	type BlockHashCount = ConstU64<250>;
+	type BlockHashCount = ();
 	type Version = ();
 	type PalletInfo = PalletInfo;
-	type AccountData = ();
+	type AccountData = pallet_balances::AccountData<u64>;
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
-	type SS58Prefix = ConstU16<42>;
+	type SS58Prefix = ();
 	type OnSetCode = ();
-	type MaxConsumers = frame_support::traits::ConstU32<16>;
+	type MaxConsumers = ConstU32<16>;
 }
 
-impl pallet_template::Config for Test {
+parameter_types! {
+	pub const UnsignedPriority: u64 = 99999999;
+	pub const SendInterval: u64 = 10;
+}
+
+impl pallet_balances::Config for Test {
+	type MaxLocks = ();
+	type MaxReserves = ();
+	type ReserveIdentifier = [u8; 8];
+	type Balance = Balance;
 	type Event = Event;
+	type DustRemoval = ();
+	type ExistentialDeposit = ConstU64<10>;
+	type AccountStore = System;
+	type WeightInfo = ();
+}
+
+pub type Extrinsic = sp_runtime::testing::TestXt<Call, ()>;
+
+impl<C> frame_system::offchain::SendTransactionTypes<C> for Test
+where
+	Call: From<C>,
+{
+	type OverarchingCall = Call;
+	type Extrinsic = Extrinsic;
+}
+
+impl sequester_pallet::Config for Test {
+	type Event = Event;
+	type BalancesEvent = Event;
+	type Balance = Balance;
+	type UnsignedPriority = UnsignedPriority;
+	type SendInterval = SendInterval;
 }
 
 // Build genesis storage according to the mock runtime.
