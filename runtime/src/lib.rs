@@ -14,7 +14,7 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
-	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, NumberFor, Verify},
+	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, AccountIdConversion, NumberFor, Verify},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult, MultiSignature,
 };
@@ -31,7 +31,7 @@ pub use frame_support::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
 		IdentityFee, Weight,
 	},
-	StorageValue,
+	PalletId, StorageValue,
 };
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_timestamp::Call as TimestampCall;
@@ -267,8 +267,10 @@ impl pallet_sudo::Config for Runtime {
 }
 
 parameter_types! {
+	pub const TreasuryPalletId: PalletId = PalletId(*b"pa/trsry");
 	pub const UnsignedPriority: u64 = 99999999;
 	pub const SendInterval: BlockNumber = 10;
+	pub TreasuryAccount: AccountId = TreasuryPalletId::get().into_account();
 }
 
 /// Configure the pallet-template in pallets/template.
@@ -278,6 +280,7 @@ impl pallet_template::Config for Runtime {
 	type Balance = Balance;
 	type UnsignedPriority = UnsignedPriority;
 	type SendInterval = SendInterval;
+	type TreasuryAccount = TreasuryAccount;
 }
 
 impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime

@@ -29,6 +29,12 @@ pub mod pallet {
 		traits::{AtLeast32BitUnsigned, Saturating, Zero},
 	};
 	use sp_std::fmt::Debug;
+    use codec::{EncodeLike, MaxEncodedLen};
+    use pallet_treasury::{PositiveImbalanceOf, BalanceOf};
+	use frame_support::traits::{
+		Currency, Get, Imbalance
+	};
+	
 
 	const DB_KEY_SUM: &[u8] = b"donations/txn-fee-sum";
 	const DB_LOCK: &[u8] = b"donations/txn-sum-lock";
@@ -36,21 +42,21 @@ pub mod pallet {
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config:
-		frame_system::Config + pallet_balances::Config + SendTransactionTypes<Call<Self>>
+		frame_system::Config + pallet_balances::Config + pallet_treasury::Config + SendTransactionTypes<Call<Self>>
 	{
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 		type BalancesEvent: From<<Self as frame_system::Config>::Event>
 			+ TryInto<pallet_balances::Event<Self>>;
-		type Balance: AtLeast32BitUnsigned
-			+ Saturating
+		type Balance: AtLeast32BitUnsigned + Saturating
 			+ Codec
 			+ TypeInfo
 			+ Default
 			+ Debug
 			+ Copy
-			+ From<<Self as pallet_balances::Config>::Balance>;
-
-		// constants
+			+ EncodeLike
+			+ MaxEncodedLen 
+			+ From<<Self as pallet_balances::Config>::Balance>
+			+ Into<BalanceOf<Self>>;
 
 		// Transaction priority for the unsigned transactions
 		#[pallet::constant]
@@ -60,6 +66,11 @@ pub mod pallet {
 		// txn-fee-sum variable
 		#[pallet::constant]
 		type SendInterval: Get<Self::BlockNumber>;
+
+		// AccountID of the treasury, which will be used to send funds to sequester
+        // https://github.com/AcalaNetwork/Acala/blob/ded6de57234c4367401dbd758db609254c2e00e0/modules/evm/src/lib.rs#L229
+        #[pallet::constant]
+        type TreasuryAccount: Get<Self::AccountId>;
 	}
 
 	// The next block where an unsigned transaction will be considered valid
@@ -72,6 +83,10 @@ pub mod pallet {
 	pub(super) type NextUnsignedAt<T: Config> =
 		StorageValue<_, T::BlockNumber, ValueQuery, DefaultNextUnsigned<T>>;
 
+	#[pallet::storage]
+    #[pallet::getter(fn fees_to_send)]
+    pub(super) type FeesToSend<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
@@ -81,7 +96,8 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// Transaction fee has been sent from the treasury to Sequester with
 		/// amount: Balance
-		TxnFeeSent(<T as Config>::Balance),
+		TxnFeeQueued(<T as Config>::Balance),
+		TxnFeeSubsumed(BalanceOf<T>),
 	}
 
 	#[pallet::error]
@@ -146,23 +162,62 @@ pub mod pallet {
 			}
 		}
 	}
+	
+	impl<T: Config> pallet_treasury::SpendFunds<T> for Pallet<T> {
+        // Using as resource: https://github.com/paritytech/substrate/blob/ded44948e2d5a398abcb4e342b0513cb690961bb/frame/bounties/src/lib.rs
+        fn spend_funds(
+            budget_remaining: &mut BalanceOf<T>,
+            imbalance: &mut PositiveImbalanceOf<T>,
+            total_weight: &mut Weight,
+            missed_any: &mut bool,
+        ) {
+            let fees_to_send = Self::fees_to_send();
+            let zero_bal: BalanceOf<T> = Zero::zero();
 
-	#[pallet::call]
-	impl<T: Config> Pallet<T> {
-		// TODO: calculate weight
-		#[pallet::weight(10_000)]
-		pub fn submit_unsigned(
-			origin: OriginFor<T>,
-			amount: <T as Config>::Balance,
-			block_num: T::BlockNumber,
-		) -> DispatchResultWithPostInfo {
-			ensure_none(origin)?;
-			// TODO (once chain is live): send XCM transfer to Sequester here
-			Self::deposit_event(Event::TxnFeeSent(amount));
-			<NextUnsignedAt<T>>::put(block_num + T::SendInterval::get());
-			Ok(None.into())
-		}
-	}
+            // valid fees to send
+            if fees_to_send > zero_bal && *budget_remaining >= fees_to_send {
+
+                *budget_remaining -= fees_to_send;
+
+				let treasury_acc = T::TreasuryAccount::get();
+
+				imbalance.subsume(T::Currency::deposit_creating(
+					&treasury_acc,
+					fees_to_send,
+				));
+				Self::deposit_event(Event::TxnFeeSubsumed(fees_to_send));
+
+                // xcm call via reserve_transfer_assets (https://github.com/paritytech/polkadot/blob/02d040ebd271a4b395b79277640878d4c768fb47/xcm/pallet-xcm/src/lib.rs#L536)
+            
+            }
+            // *total_weight += <T as Config>::WeightInfo::spend_funds(bounties_len);
+        }
+    }
+
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        // TODO: calculate weight
+        #[pallet::weight(10_000)]
+        pub fn submit_unsigned(
+            origin: OriginFor<T>,
+            amount: <T as Config>::Balance,
+            block_num: T::BlockNumber,
+        ) -> DispatchResultWithPostInfo {
+            ensure_none(origin)?;
+
+            // update storage to reject unsigned transactions until SendInterval blocks pass
+            <NextUnsignedAt<T>>::put(block_num + T::SendInterval::get());
+
+            let pending_fees = Self::fees_to_send();
+
+            // add pending XCM transfer to Sequester here   
+            FeesToSend::<T>::set(pending_fees.saturating_add(amount.into()));
+
+            Self::deposit_event(Event::TxnFeeQueued(amount));
+            Ok(None.into())
+        }
+    }
 
 	impl<T: Config> Pallet<T> {
 		fn calculate_fees_for_block() -> <T as Config>::Balance {
@@ -248,11 +303,8 @@ pub mod pallet {
 				let fees_to_send = val.get::<<T as Config>::Balance>();
 				match fees_to_send {
 					Ok(Some(fetched_fees)) => {
-						let call = Call::<T>::submit_unsigned { amount: fetched_fees, block_num };
-						let txn_res = SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(
-							call.into(),
-						)
-						.map_err(|_| {});
+                        let call = Call::<T>::submit_unsigned{amount: fetched_fees, block_num};
+                        let txn_res = SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into());
 						match txn_res {
 							Ok(_) => {
 								log::info!("resetting storage value");
