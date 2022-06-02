@@ -16,12 +16,14 @@ use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
 	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, AccountIdConversion, NumberFor, Verify},
 	transaction_validity::{TransactionSource, TransactionValidity},
-	ApplyExtrinsicResult, MultiSignature,
+	ApplyExtrinsicResult, MultiSignature, Percent
 };
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
+use frame_system::EnsureRoot;
+use frame_support::traits::EnsureOneOf;
 
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
@@ -250,6 +252,45 @@ impl pallet_balances::Config for Runtime {
 }
 
 parameter_types! {
+	pub const ProposalBond: Permill = Permill::from_percent(5);
+	pub const ProposalBondMinimum: Balance = 10000;
+	pub const ProposalBondMaximum: Balance = 50000;
+	pub const SpendPeriod: BlockNumber = 5;
+	pub const Burn: Permill = Permill::from_percent(1);
+	pub const TreasuryPalletId: PalletId = PalletId(*b"py/trsry");
+
+	pub const TipCountdown: BlockNumber = 1 * DAYS;
+	pub const TipFindersFee: Percent = Percent::from_percent(20);
+	pub const TipReportDepositBase: Balance = 100;
+	pub const DataDepositPerByte: Balance = 1;
+	pub const MaxApprovals: u32 = 100;
+	pub const MaxAuthorities: u32 = 100_000;
+	pub const MaxKeys: u32 = 10_000;
+	pub const MaxPeerInHeartbeats: u32 = 10_000;
+	pub const MaxPeerDataEncodingSize: u32 = 1_000;
+}
+
+type ApproveOrigin = EnsureRoot<AccountId>;
+
+impl pallet_treasury::Config for Runtime {
+	type PalletId = TreasuryPalletId;
+	type Currency = Balances;
+	type ApproveOrigin = ApproveOrigin;
+	type RejectOrigin = ApproveOrigin;
+	type Event = Event;
+	type OnSlash = Treasury;
+	type ProposalBond = ProposalBond;
+	type ProposalBondMinimum = ProposalBondMinimum;
+	type ProposalBondMaximum = ProposalBondMaximum;
+	type SpendPeriod = SpendPeriod;
+	type Burn = Burn;
+	type BurnDestination = ();
+	type SpendFunds = TemplateModule;
+	type MaxApprovals = MaxApprovals;
+	type WeightInfo = ();
+}
+
+parameter_types! {
 	pub const TransactionByteFee: Balance = 1;
 }
 
@@ -267,7 +308,6 @@ impl pallet_sudo::Config for Runtime {
 }
 
 parameter_types! {
-	pub const TreasuryPalletId: PalletId = PalletId(*b"pa/trsry");
 	pub const UnsignedPriority: u64 = 99999999;
 	pub const SendInterval: BlockNumber = 10;
 	pub TreasuryAccount: AccountId = TreasuryPalletId::get().into_account();
@@ -304,6 +344,7 @@ construct_runtime!(
 		Aura: pallet_aura,
 		Grandpa: pallet_grandpa,
 		Balances: pallet_balances,
+		Treasury: pallet_treasury,
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
@@ -351,6 +392,7 @@ mod benches {
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
 		[pallet_template, TemplateModule]
+		[pallet_treasury, Treasury]
 	);
 }
 

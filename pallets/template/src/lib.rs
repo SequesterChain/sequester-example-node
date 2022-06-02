@@ -171,6 +171,7 @@ pub mod pallet {
             total_weight: &mut Weight,
             missed_any: &mut bool,
         ) {
+			log::info!("spend_funds triggered!");
             let fees_to_send = Self::fees_to_send();
             let zero_bal: BalanceOf<T> = Zero::zero();
 
