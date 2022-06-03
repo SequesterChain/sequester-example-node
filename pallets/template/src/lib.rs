@@ -31,11 +31,11 @@ pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
 
-	use frame_support::sp_runtime::traits::Zero;
+	use frame_support::sp_runtime::traits::{Zero, CheckedSub};
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config {
+	pub trait Config: frame_system::Config + pallet_xcm::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 		type Currency: Currency<Self::AccountId>;
@@ -94,8 +94,21 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		fn send_fees_to_sequester() {
 			let account_id = T::SequesterAccountId::get();
-			let fee_sum = T::Currency::free_balance(&account_id);
-			log::info!("total fees for block!!: {:?}", fee_sum);
+			let fee_sum = T::Currency::free_balance(&account_id)
+				.checked_sub(&T::Currency::minimum_balance())
+				.unwrap_or_else(Zero::zero);
+
+			log::info!("total fees to send !!: {:?}", fee_sum);
+
+			// Send XCM Transaction --
+			// XcmPallet::reserve_transfer_assets(
+			// 	Origin::signed(ALICE),
+			// 	Box::new(Parachain(PARA_ID).into().into()),
+			// 	Box::new(dest.clone().into()),
+			// 	Box::new((Here, SEND_AMOUNT).into()),
+			// 	0,
+			// );
+			// let _success = T::Currency::transfer(&account_id, &author, fee_sum, KeepAlive);
 		}
 	}
 }
