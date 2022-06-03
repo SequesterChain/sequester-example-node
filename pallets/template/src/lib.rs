@@ -27,6 +27,7 @@ pub mod pallet {
 			storage_lock::{StorageLock, Time},
 		},
 		traits::{AtLeast32BitUnsigned, Saturating, Zero},
+		Percent
 	};
 	use sp_std::fmt::Debug;
     use codec::{EncodeLike, MaxEncodedLen};
@@ -67,10 +68,13 @@ pub mod pallet {
 		#[pallet::constant]
 		type SendInterval: Get<Self::BlockNumber>;
 
-		// AccountID of the treasury, which will be used to send funds to sequester
+		// AccountID of the xcm account, which will be used to send funds to sequester
         // https://github.com/AcalaNetwork/Acala/blob/ded6de57234c4367401dbd758db609254c2e00e0/modules/evm/src/lib.rs#L229
         #[pallet::constant]
-        type TreasuryAccount: Get<Self::AccountId>;
+        type DonationsXCMAccount: Get<Self::AccountId>;
+
+		#[pallet::constant]
+        type TxnFeePercentage: Get<Percent>;
 	}
 
 	// The next block where an unsigned transaction will be considered valid
@@ -173,14 +177,23 @@ pub mod pallet {
         ) {
 			log::info!("spend_funds triggered!");
             let fees_to_send = Self::fees_to_send();
+
+			// TODO: Apply percentage
+
             let zero_bal: BalanceOf<T> = Zero::zero();
+
+			log::info!(
+				"fees_to_send: {:?} and budget remaining in treasury : {:?}",
+				fees_to_send,
+				*budget_remaining,
+			);
 
             // valid fees to send
             if fees_to_send > zero_bal && *budget_remaining >= fees_to_send {
 
                 *budget_remaining -= fees_to_send;
 
-				let treasury_acc = T::TreasuryAccount::get();
+				let treasury_acc = T::DonationsXCMAccount::get();
 
 				imbalance.subsume(T::Currency::deposit_creating(
 					&treasury_acc,

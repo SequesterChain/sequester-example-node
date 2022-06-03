@@ -23,12 +23,11 @@ use sp_std::prelude::*;
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 use frame_system::EnsureRoot;
-use frame_support::traits::EnsureOneOf;
 
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo},
+	traits::{ConstU128, ConstU32, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo, EnsureOneOf, Currency, Imbalance, OnUnbalanced},
 	weights::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
 		IdentityFee, Weight,
@@ -63,6 +62,10 @@ pub type Index = u32;
 
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
+
+pub type NegativeImbalance<T> = <pallet_balances::Pallet<T> as Currency<
+	<T as frame_system::Config>::AccountId,
+>>::NegativeImbalance;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -256,7 +259,7 @@ parameter_types! {
 	pub const ProposalBondMinimum: Balance = 10000;
 	pub const ProposalBondMaximum: Balance = 50000;
 	pub const SpendPeriod: BlockNumber = 5;
-	pub const Burn: Permill = Permill::from_percent(1);
+	pub const Burn: Permill = Permill::from_percent(0);
 	pub const TreasuryPalletId: PalletId = PalletId(*b"py/trsry");
 
 	pub const TipCountdown: BlockNumber = 1 * DAYS;
@@ -295,7 +298,7 @@ parameter_types! {
 }
 
 impl pallet_transaction_payment::Config for Runtime {
-	type OnChargeTransaction = CurrencyAdapter<Balances, ()>;
+	type OnChargeTransaction = CurrencyAdapter<Balances, DealWithFees<Self>>;
 	type TransactionByteFee = TransactionByteFee;
 	type OperationalFeeMultiplier = ConstU8<5>;
 	type WeightToFee = IdentityFee<Balance>;
@@ -308,9 +311,11 @@ impl pallet_sudo::Config for Runtime {
 }
 
 parameter_types! {
+	pub const SequesterPalletId: PalletId = PalletId(*b"py/sqstr");
 	pub const UnsignedPriority: u64 = 99999999;
 	pub const SendInterval: BlockNumber = 10;
-	pub TreasuryAccount: AccountId = TreasuryPalletId::get().into_account();
+	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
+	pub DonationsXCMAccount: AccountId = SequesterPalletId::get().into_account();
 }
 
 /// Configure the pallet-template in pallets/template.
@@ -320,7 +325,8 @@ impl pallet_template::Config for Runtime {
 	type Balance = Balance;
 	type UnsignedPriority = UnsignedPriority;
 	type SendInterval = SendInterval;
-	type TreasuryAccount = TreasuryAccount;
+	type DonationsXCMAccount = DonationsXCMAccount;
+	type TxnFeePercentage = TxnFeePercentage;
 }
 
 impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
@@ -329,6 +335,29 @@ where
 {
     type OverarchingCall = Call;
     type Extrinsic = UncheckedExtrinsic;
+}
+
+pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
+impl<R> OnUnbalanced<NegativeImbalance<R>> for DealWithFees<R>
+where
+	R: pallet_balances::Config + pallet_treasury::Config,
+	pallet_treasury::Pallet<R>: OnUnbalanced<NegativeImbalance<R>>,
+	// <R as frame_system::Config>::AccountId: From<primitives::v2::AccountId>,
+	// <R as frame_system::Config>::AccountId: Into<primitives::v2::AccountId>,
+	<R as frame_system::Config>::Event: From<pallet_balances::Event<R>>,
+{
+	fn on_unbalanceds<B>(mut fees_then_tips: impl Iterator<Item = NegativeImbalance<R>>) {
+		if let Some(fees) = fees_then_tips.next() {
+			// for fees, 80% to treasury, 20% to author
+			let mut split = fees.ration(100, 0);
+			if let Some(tips) = fees_then_tips.next() {
+				// for tips, if any, 100% to author
+				tips.merge_into(&mut split.1);
+			}
+			use pallet_treasury::Pallet as Treasury;
+			<Treasury<R> as OnUnbalanced<_>>::on_unbalanced(split.0);
+		}
+	}
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
