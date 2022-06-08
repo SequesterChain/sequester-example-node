@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 // `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
 #![recursion_limit = "256"]
+#![feature(more_qualified_paths)]
 
 // Make the WASM binary available.
 #[cfg(feature = "std")]
@@ -17,7 +18,7 @@ use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
 	traits::{
 		AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount,
-		NumberFor, Verify,
+		NumberFor, Saturating, Verify,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult, MultiSignature, Percent,
@@ -41,6 +42,7 @@ pub use frame_support::{
 	PalletId, StorageValue,
 };
 pub use pallet_balances::Call as BalancesCall;
+use pallet_template::FeeCalculator;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 #[cfg(any(feature = "std", test))]
@@ -319,7 +321,7 @@ impl pallet_sudo::Config for Runtime {
 parameter_types! {
 	pub const SequesterPalletId: PalletId = PalletId(*b"py/sqstr");
 	pub const UnsignedPriority: u64 = 99999999;
-	pub const SendInterval: BlockNumber = 10;
+	pub const SendInterval: BlockNumber = 9;
 	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
 	pub DonationsXCMAccount: AccountId = SequesterPalletId::get().into_account();
 }
@@ -333,6 +335,7 @@ impl pallet_template::Config for Runtime {
 	type SendInterval = SendInterval;
 	type DonationsXCMAccount = DonationsXCMAccount;
 	type TxnFeePercentage = TxnFeePercentage;
+	type FeeCalculator = TransactionFeeCalculator<Self>;
 }
 
 impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
@@ -362,6 +365,35 @@ where
 			}
 			use pallet_treasury::Pallet as Treasury;
 			<Treasury<R> as OnUnbalanced<_>>::on_unbalanced(split.0);
+		}
+	}
+}
+
+pub struct TransactionFeeCalculator<S>(sp_std::marker::PhantomData<S>);
+impl<S> FeeCalculator<S> for TransactionFeeCalculator<S>
+where
+	S: pallet_balances::Config + pallet_template::Config,
+	<S as frame_system::Config>::AccountId: From<AccountId>,
+	<S as frame_system::Config>::AccountId: Into<AccountId>,
+{
+	fn match_event(
+		event: pallet_balances::Event<S>,
+		curr_block_fee_sum: &mut <S as pallet_template::Config>::Balance,
+	) {
+		let treasury_id: AccountId = TreasuryPalletId::get().into_account();
+		match event {
+			<pallet_balances::Event<S>>::Deposit { who, amount } => {
+				// If amount is deposited back into the account that paid for the transaction
+				// fees during the same transaction, then deduct it from the txn fee counter as
+				// a refund
+
+				log::info!("who: {:?} treasury account: {:?}", who, treasury_id);
+				if who == treasury_id.into() {
+					*curr_block_fee_sum = (*curr_block_fee_sum)
+						.saturating_add(<S as pallet_template::Config>::Balance::from(amount));
+				}
+			},
+			_ => {},
 		}
 	}
 }

@@ -1,5 +1,4 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![feature(more_qualified_paths)]
 
 pub use pallet::*;
 
@@ -12,8 +11,14 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+mod fees;
+
+pub use fees::*;
+
 #[frame_support::pallet]
 pub mod pallet {
+	use super::*;
+
 	use codec::Codec;
 	use codec::{EncodeLike, MaxEncodedLen};
 	use frame_support::pallet_prelude::*;
@@ -60,6 +65,8 @@ pub mod pallet {
 			+ MaxEncodedLen
 			+ From<<Self as pallet_balances::Config>::Balance>
 			+ Into<BalanceOf<Self>>;
+
+		type FeeCalculator: FeeCalculator<Self>;
 
 		// Transaction priority for the unsigned transactions
 		#[pallet::constant]
@@ -174,8 +181,8 @@ pub mod pallet {
 		fn spend_funds(
 			budget_remaining: &mut BalanceOf<T>,
 			imbalance: &mut PositiveImbalanceOf<T>,
-			total_weight: &mut Weight,
-			missed_any: &mut bool,
+			_total_weight: &mut Weight,
+			_missed_any: &mut bool,
 		) {
 			log::info!("spend_funds triggered!");
 			let fees_to_send = Self::fees_to_send();
@@ -197,10 +204,12 @@ pub mod pallet {
 				let sequester_acc = T::DonationsXCMAccount::get();
 
 				imbalance.subsume(T::Currency::deposit_creating(&sequester_acc, fees_to_send));
+				// reset fee counter
+				FeesToSend::<T>::set(zero_bal);
 				Self::deposit_event(Event::TxnFeeSubsumed(fees_to_send));
 
 				// xcm call via reserve_transfer_assets (https://github.com/paritytech/polkadot/blob/02d040ebd271a4b395b79277640878d4c768fb47/xcm/pallet-xcm/src/lib.rs#L536)
-				Self::xcm_transfer_to_sequester(
+				let _ = Self::xcm_transfer_to_sequester(
 					RawOrigin::Signed(sequester_acc).into(),
 					fees_to_send,
 				);
@@ -238,9 +247,9 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			amount: BalanceOf<T>,
 		) -> DispatchResultWithPostInfo {
-			let who = ensure_signed(origin)?;
+			let _who = ensure_signed(origin)?;
 
-			// log::info!("origin account: {:?}", origin);
+			log::info!("amount to send via xcm: {:?}", amount);
 
 			Ok(None.into())
 		}
@@ -251,7 +260,6 @@ pub mod pallet {
 			let events = <frame_system::Pallet<T>>::read_events_no_consensus();
 
 			let mut curr_block_fee_sum = Zero::zero();
-			let mut withdrawee: Option<T::AccountId> = None;
 
 			let filtered_events = events.into_iter().filter_map(|event_record| {
 				let balances_event = <T as Config>::BalancesEvent::from(event_record.event);
@@ -259,36 +267,10 @@ pub mod pallet {
 			});
 
 			for event in filtered_events {
-				Self::match_event(event, &mut withdrawee, &mut curr_block_fee_sum);
+				<T as Config>::FeeCalculator::match_event(event, &mut curr_block_fee_sum);
 			}
 
 			curr_block_fee_sum
-		}
-
-		fn match_event(
-			event: pallet_balances::Event<T>,
-			withdrawee: &mut Option<T::AccountId>,
-			curr_block_fee_sum: &mut <T as Config>::Balance,
-		) {
-			match event {
-				<pallet_balances::Event<T>>::Withdraw { who, amount } => {
-					*withdrawee = who.into();
-					log::info!("withdraw event!!: {:?}", amount);
-					*curr_block_fee_sum =
-						(*curr_block_fee_sum).saturating_add(<T as Config>::Balance::from(amount));
-				},
-				<pallet_balances::Event<T>>::Deposit { who, amount } => {
-					// If amount is deposited back into the account that paid for the transaction
-					// fees during the same transaction, then deduct it from the txn fee counter as
-					// a refund
-					if Some(who) == *withdrawee {
-						log::info!("deposit refunded!!: {:?}", amount);
-						*curr_block_fee_sum = (*curr_block_fee_sum)
-							.saturating_sub(<T as Config>::Balance::from(amount));
-					}
-				},
-				_ => {},
-			}
 		}
 
 		fn update_storage(block_fee_sum: <T as Config>::Balance) {
