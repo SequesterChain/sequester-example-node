@@ -41,6 +41,9 @@ sp-transaction-pool = { version = "4.0.0-dev", default-features = false, git = "
 sp-version = { version = "5.0.0", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.18" }
 pallet-xcm = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
 xcm = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
+xcm-builder = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
+xcm-executor = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
+cumulus-primitives-utility = { git = "https://github.com/paritytech/cumulus", default-features = false,  branch = "polkadot-v0.9.18" }
 log = {version = "0.4.14", feature = ["derive"]}
 
 # Used for the node template's RPCs
@@ -88,6 +91,7 @@ std = [
 	"sp-std/std",
 	"sp-transaction-pool/std",
 	"sp-version/std",
+	"cumulus-primitives-utility/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",

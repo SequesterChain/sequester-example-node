@@ -7,6 +7,7 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use frame_support::traits::Everything;
 use frame_system::EnsureRoot;
 use pallet_grandpa::{
 	fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList,
@@ -27,6 +28,8 @@ use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
+use xcm::latest::prelude::*;
+use xcm_builder::{FixedWeightBounds, LocationInverter, SignedToAccountId32};
 
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
@@ -338,6 +341,45 @@ impl pallet_template::Config for Runtime {
 	type FeeCalculator = TransactionFeeCalculator<Self>;
 }
 
+parameter_types! {
+	pub Ancestry: MultiLocation = Here.into();
+	pub const BaseXcmWeight: Weight = 10;
+	pub const MaxInstructions: u32 = 100;
+	pub const RelayNetwork: NetworkId = NetworkId::Any;
+}
+
+pub type LocalOriginToLocation = SignedToAccountId32<Origin, AccountId, RelayNetwork>;
+
+/// The means for routing XCM messages which are not for local execution into the right message
+/// queues.
+/// TODO: Fix for actual testing
+
+pub type XcmRouter = (
+	// Two routers - use UMP to communicate with the relay chain:
+	cumulus_primitives_utility::ParentAsUmp<(), ()>,
+	// ..and XCMP to communicate with the sibling chains.
+	(),
+);
+
+impl pallet_xcm::Config for Runtime {
+	type Event = Event;
+	type SendXcmOrigin = xcm_builder::EnsureXcmOrigin<Origin, LocalOriginToLocation>;
+	type XcmRouter = XcmRouter;
+	// Anyone can execute XCM messages locally...
+	type ExecuteXcmOrigin = xcm_builder::EnsureXcmOrigin<Origin, LocalOriginToLocation>;
+	type XcmExecuteFilter = Everything;
+	// TODO: Fix for actual testing
+	type XcmExecutor = ();
+	type XcmTeleportFilter = Everything;
+	type XcmReserveTransferFilter = Everything;
+	type Weigher = FixedWeightBounds<BaseXcmWeight, Call, MaxInstructions>;
+	type LocationInverter = LocationInverter<Ancestry>;
+	type Origin = Origin;
+	type Call = Call;
+	const VERSION_DISCOVERY_QUEUE_SIZE: u32 = 100;
+	type AdvertisedXcmVersion = pallet_xcm::CurrentXcmVersion;
+}
+
 impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
 where
 	Call: From<C>,
@@ -416,6 +458,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template::{Pallet, Call, Event<T>, ValidateUnsigned},
+		XCM: pallet_xcm,
 	}
 );
 
@@ -460,6 +503,7 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_template, TemplateModule]
 		[pallet_treasury, Treasury]
+		[pallet_xcm, XCM]
 	);
 }
 
