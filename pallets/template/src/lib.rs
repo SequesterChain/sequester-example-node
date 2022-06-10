@@ -280,14 +280,37 @@ pub mod pallet {
 
 			let mut assets = MultiAssets::new();
 
+			let transfer_asset = MultiAsset {
+				id: AssetId::Concrete(MultiLocation::new(1, Junctions::Here)),
+				fun: Fungibility::Fungible(amount_u128),
+			};
+
 			let fee_asset = MultiAsset {
 				id: AssetId::Concrete(MultiLocation::new(1, Junctions::Here)),
 				fun: Fungibility::Fungible(fee_u128),
 			};
+			assets.push(transfer_asset.clone());
 			assets.push(fee_asset.clone());
 
+			let statemine_id: u32 = 1000;
+
 			let msg: xcm::v2::Xcm<<T as frame_system::Config>::Call> =
-				Xcm(vec![WithdrawAsset(assets)]);
+				Xcm(vec![InitiateReserveWithdraw {
+					assets: All.into(),
+					reserve: MultiLocation::new(
+						1,
+						// statemine id
+						Junctions::X1(Junction::Parachain(statemine_id)),
+					),
+					xcm: Xcm(vec![
+						BuyExecution { fees: fee_asset, weight_limit: Unlimited },
+						DepositAsset {
+							assets: All.into(),
+							max_assets: 2,
+							beneficiary: dst_location.clone(),
+						},
+					]),
+				}]);
 
 			<T as pallet_xcm::Config>::XcmExecutor::execute_xcm_in_credit(
 				origin_location,
