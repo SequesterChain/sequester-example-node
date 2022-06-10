@@ -18,8 +18,8 @@ use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
 	traits::{
-		AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount,
-		NumberFor, Saturating, Verify,
+		AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, Convert,
+		IdentifyAccount, NumberFor, Saturating, Verify,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult, MultiSignature, Percent,
@@ -327,6 +327,15 @@ parameter_types! {
 	pub const SendInterval: BlockNumber = 9;
 	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
 	pub DonationsXCMAccount: AccountId = SequesterPalletId::get().into_account();
+	pub SequesterTransferWeight: Weight = 100000000000;
+	pub SequesterTransferFee: Balance = 10000000;
+}
+
+pub struct SequesterAccountIdToMultiLocation;
+impl Convert<AccountId, MultiLocation> for SequesterAccountIdToMultiLocation {
+	fn convert(account: AccountId) -> MultiLocation {
+		X1(AccountId32 { network: NetworkId::Any, id: account.into() }).into()
+	}
 }
 
 /// Configure the pallet-template in pallets/template.
@@ -339,6 +348,9 @@ impl pallet_template::Config for Runtime {
 	type DonationsXCMAccount = DonationsXCMAccount;
 	type TxnFeePercentage = TxnFeePercentage;
 	type FeeCalculator = TransactionFeeCalculator<Self>;
+	type AccountIdToMultiLocation = SequesterAccountIdToMultiLocation;
+	type SequesterTransferFee = SequesterTransferFee;
+	type SequesterTransferWeight = SequesterTransferWeight;
 }
 
 parameter_types! {

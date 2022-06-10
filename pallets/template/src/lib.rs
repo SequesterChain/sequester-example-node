@@ -21,8 +21,8 @@ pub mod pallet {
 
 	use codec::Codec;
 	use codec::{EncodeLike, MaxEncodedLen};
-	use frame_support::pallet_prelude::*;
 	use frame_support::traits::{Currency, Get, Imbalance};
+	use frame_support::{pallet_prelude::*, weights::Weight};
 	use frame_system::{
 		offchain::{SendTransactionTypes, SubmitTransaction},
 		pallet_prelude::*,
@@ -35,10 +35,11 @@ pub mod pallet {
 			storage::StorageValueRef,
 			storage_lock::{StorageLock, Time},
 		},
-		traits::{AtLeast32BitUnsigned, Saturating, Zero},
+		traits::{AtLeast32BitUnsigned, Convert, Saturating, Zero},
 		Percent,
 	};
-	use sp_std::fmt::Debug;
+	use sp_std::{fmt::Debug, vec, vec::Vec};
+	use xcm::{latest::prelude::*, VersionedXcm};
 
 	const DB_KEY_SUM: &[u8] = b"donations/txn-fee-sum";
 	const DB_LOCK: &[u8] = b"donations/txn-sum-lock";
@@ -49,6 +50,7 @@ pub mod pallet {
 		frame_system::Config
 		+ pallet_balances::Config
 		+ pallet_treasury::Config
+		+ pallet_xcm::Config
 		+ SendTransactionTypes<Call<Self>>
 	{
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
@@ -67,6 +69,16 @@ pub mod pallet {
 			+ Into<BalanceOf<Self>>;
 
 		type FeeCalculator: FeeCalculator<Self>;
+
+		type AccountIdToMultiLocation: Convert<Self::AccountId, MultiLocation>;
+
+		// weight of an xcm transaction to send to sequester
+		#[pallet::constant]
+		type SequesterTransferFee: Get<<Self as Config>::Balance>;
+
+		// weight of an xcm transaction to send to sequester
+		#[pallet::constant]
+		type SequesterTransferWeight: Get<Weight>;
 
 		// Transaction priority for the unsigned transactions
 		#[pallet::constant]
@@ -116,9 +128,9 @@ pub mod pallet {
 	#[pallet::error]
 	pub enum Error<T> {
 		/// Error names should be descriptive.
-		NoneValue,
+		XcmExecutionFailed,
 		/// Errors should have helpful documentation associated with them.
-		InvalidOffchainStorageRead,
+		FeeConvertFailed,
 	}
 
 	#[pallet::hooks]
@@ -247,9 +259,44 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			amount: BalanceOf<T>,
 		) -> DispatchResultWithPostInfo {
-			let _who = ensure_signed(origin)?;
+			let who = ensure_signed(origin)?;
 
 			log::info!("amount to send via xcm: {:?}", amount);
+
+			// send to same account on Sequester
+			let dest = who.clone();
+
+			let origin_location = T::AccountIdToMultiLocation::convert(who.clone());
+			let dst_location = T::AccountIdToMultiLocation::convert(dest.clone());
+
+			let amount_u128 =
+				TryInto::<u128>::try_into(amount).map_err(|_| Error::<T>::FeeConvertFailed)?;
+
+			let weight = T::SequesterTransferWeight::get();
+			let fee = T::SequesterTransferFee::get();
+
+			let fee_u128 =
+				TryInto::<u128>::try_into(fee).map_err(|_| Error::<T>::FeeConvertFailed)?;
+
+			let mut assets = MultiAssets::new();
+
+			let fee_asset = MultiAsset {
+				id: AssetId::Concrete(MultiLocation::new(1, Junctions::Here)),
+				fun: Fungibility::Fungible(fee_u128),
+			};
+			assets.push(fee_asset.clone());
+
+			let msg: xcm::v2::Xcm<<T as frame_system::Config>::Call> =
+				Xcm(vec![WithdrawAsset(assets)]);
+
+			<T as pallet_xcm::Config>::XcmExecutor::execute_xcm_in_credit(
+				origin_location,
+				msg,
+				weight,
+				weight,
+			)
+			.ensure_complete()
+			.map_err(|_| Error::<T>::XcmExecutionFailed)?;
 
 			Ok(None.into())
 		}
