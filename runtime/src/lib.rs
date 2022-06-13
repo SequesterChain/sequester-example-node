@@ -45,15 +45,15 @@ pub use frame_support::{
 	PalletId, StorageValue,
 };
 pub use pallet_balances::Call as BalancesCall;
-use pallet_template::FeeCalculator;
+use pallet_donations::FeeCalculator;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 
-/// Import the template pallet.
-pub use pallet_template;
+/// Import the donations pallet.
+pub use pallet_donations;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -299,7 +299,7 @@ impl pallet_treasury::Config for Runtime {
 	type SpendPeriod = SpendPeriod;
 	type Burn = Burn;
 	type BurnDestination = ();
-	type SpendFunds = TemplateModule;
+	type SpendFunds = Donations;
 	type MaxApprovals = MaxApprovals;
 	type WeightInfo = ();
 }
@@ -338,8 +338,7 @@ impl Convert<AccountId, MultiLocation> for SequesterAccountIdToMultiLocation {
 	}
 }
 
-/// Configure the pallet-template in pallets/template.
-impl pallet_template::Config for Runtime {
+impl pallet_donations::Config for Runtime {
 	type Event = Event;
 	type BalancesEvent = Event;
 	type Balance = Balance;
@@ -426,13 +425,13 @@ where
 pub struct TransactionFeeCalculator<S>(sp_std::marker::PhantomData<S>);
 impl<S> FeeCalculator<S> for TransactionFeeCalculator<S>
 where
-	S: pallet_balances::Config + pallet_template::Config,
+	S: pallet_balances::Config + pallet_donations::Config,
 	<S as frame_system::Config>::AccountId: From<AccountId>,
 	<S as frame_system::Config>::AccountId: Into<AccountId>,
 {
 	fn match_event(
 		event: pallet_balances::Event<S>,
-		curr_block_fee_sum: &mut <S as pallet_template::Config>::Balance,
+		curr_block_fee_sum: &mut <S as pallet_donations::Config>::Balance,
 	) {
 		let treasury_id: AccountId = TreasuryPalletId::get().into_account();
 		match event {
@@ -444,7 +443,7 @@ where
 				log::info!("who: {:?} treasury account: {:?}", who, treasury_id);
 				if who == treasury_id.into() {
 					*curr_block_fee_sum = (*curr_block_fee_sum)
-						.saturating_add(<S as pallet_template::Config>::Balance::from(amount));
+						.saturating_add(<S as pallet_donations::Config>::Balance::from(amount));
 				}
 			},
 			_ => {},
@@ -468,8 +467,7 @@ construct_runtime!(
 		Treasury: pallet_treasury,
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
-		// Include the custom logic from the pallet-template in the runtime.
-		TemplateModule: pallet_template::{Pallet, Call, Event<T>, ValidateUnsigned},
+		Donations: pallet_donations::{Pallet, Call, Event<T>, ValidateUnsigned},
 		XCM: pallet_xcm,
 	}
 );
@@ -513,7 +511,7 @@ mod benches {
 		[frame_system, SystemBench::<Runtime>]
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
-		[pallet_template, TemplateModule]
+		[pallet_donations, Donations]
 		[pallet_treasury, Treasury]
 		[pallet_xcm, XCM]
 	);
