@@ -14,10 +14,6 @@ purge-dev:
 init:
 	./scripts/init.sh
 
-.PHONY: docker-run
-docker-run:
-	./scripts/docker_run.sh
-
 .PHONY: test
 test:
 	SKIP_WASM_BUILD=1 cargo test --release --all
