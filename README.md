@@ -8,7 +8,7 @@ An example implementation of a FRAME-based [Substrate](https://www.substrate.io/
 
 First, complete the [basic Rust setup instructions](./docs/rust-setup.md).
 
-### Init Environment
+### Initialize Environment
 
 This command will initialize the WASM build environment and set up the latest Rust nightly build
 
@@ -20,7 +20,7 @@ make init
 
 ### Single-Node Development Chain
 
-This command will start the single-node development chain with non-persistent state:
+This command will start our single-node development chain with non-persistent state:
 
 ```bash
 make run-dev
@@ -56,7 +56,9 @@ make test
 
 Additionally, you can use the Substrate Front-end template and send funds between accounts to see Sequester pallet in action.
 
-TODO: add more info here
+Instructions to install and run the front-end template can be found [in this Substrate tutorial.](https://docs.substrate.io/tutorials/v3/create-your-first-substrate-chain/#install-the-front-end-template).
+
+The Donations pallet functionality can be verified through the UI by sending a transaction between users and observing events `donations:TxnFeeQueued` and `donations:TxnFeeSubsumed` in the Events UI section.  Every 9 blocks (as configured by our example chain), we will send the accumulated transaction fees to Sequester's account, observed through a `balances:Deposit` event.
 
 ### Run in Docker
 
@@ -69,7 +71,4 @@ Then run the following command to start a single node development chain.
 ./scripts/docker-run.sh
 ```
 
-This command will firstly compile your code, and then start a local development network. You can
-also replace the default command
-(`cargo build --release && ./target/release/node-template --dev --ws-external`)
-by appending your own. A few useful ones are as follow.
+This command will firstly compile your code, and then start a local development network.
