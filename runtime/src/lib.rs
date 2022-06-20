@@ -8,10 +8,11 @@
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
 use frame_support::traits::Everything;
-use frame_system::EnsureRoot;
+use frame_system::{EnsureRoot, EventRecord};
 use pallet_grandpa::{
 	fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList,
 };
+use pallet_treasury::BalanceOf;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
@@ -19,7 +20,7 @@ use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
 	traits::{
 		AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, Convert,
-		IdentifyAccount, NumberFor, Saturating, Verify,
+		IdentifyAccount, NumberFor, Saturating, Verify, Zero,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult, MultiSignature, Percent,
@@ -322,13 +323,19 @@ impl pallet_sudo::Config for Runtime {
 }
 
 parameter_types! {
-	pub const SequesterPalletId: PalletId = PalletId(*b"py/sqstr");
 	pub const UnsignedPriority: u64 = 99999999;
 	pub const SendInterval: BlockNumber = 9;
 	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
-	pub DonationsXCMAccount: AccountId = SequesterPalletId::get().into_account();
 	pub SequesterTransferWeight: Weight = 100000000000;
 	pub SequesterTransferFee: Balance = 10000000;
+	pub ReserveMultiLocation: MultiLocation = MultiLocation::new(
+		1,
+		Junctions::X1(Junction::Parachain(1000)),
+	);
+	pub SequesterMultiLocation: MultiLocation = MultiLocation::new(
+		1,
+		Junctions::X1(Junction::Parachain(9999)),
+	);
 }
 
 pub struct SequesterAccountIdToMultiLocation;
@@ -341,15 +348,15 @@ impl Convert<AccountId, MultiLocation> for SequesterAccountIdToMultiLocation {
 impl pallet_donations::Config for Runtime {
 	type Event = Event;
 	type BalancesEvent = Event;
-	type Balance = Balance;
 	type UnsignedPriority = UnsignedPriority;
 	type SendInterval = SendInterval;
-	type DonationsXCMAccount = DonationsXCMAccount;
 	type TxnFeePercentage = TxnFeePercentage;
 	type FeeCalculator = TransactionFeeCalculator<Self>;
 	type AccountIdToMultiLocation = SequesterAccountIdToMultiLocation;
 	type SequesterTransferFee = SequesterTransferFee;
 	type SequesterTransferWeight = SequesterTransferWeight;
+	type ReserveMultiLocation = ReserveMultiLocation;
+	type SequesterMultiLocation = SequesterMultiLocation;
 }
 
 parameter_types! {
@@ -428,26 +435,40 @@ where
 	S: pallet_balances::Config + pallet_donations::Config,
 	<S as frame_system::Config>::AccountId: From<AccountId>,
 	<S as frame_system::Config>::AccountId: Into<AccountId>,
+	BalanceOf<S>: From<<S as pallet_balances::Config>::Balance>,
+	BalanceOf<S>: Into<<S as pallet_balances::Config>::Balance>,
 {
-	fn match_event(
-		event: pallet_balances::Event<S>,
-		curr_block_fee_sum: &mut <S as pallet_donations::Config>::Balance,
-	) {
-		let treasury_id: AccountId = TreasuryPalletId::get().into_account();
-		match event {
-			<pallet_balances::Event<S>>::Deposit { who, amount } => {
-				// If amount is deposited back into the account that paid for the transaction
-				// fees during the same transaction, then deduct it from the txn fee counter as
-				// a refund
+	fn match_events(
+		events: Vec<
+			EventRecord<<S as frame_system::Config>::Event, <S as frame_system::Config>::Hash>,
+		>,
+	) -> BalanceOf<S> {
+		let mut curr_block_fee_sum: BalanceOf<S> = Zero::zero();
 
-				log::info!("who: {:?} treasury account: {:?}", who, treasury_id);
-				if who == treasury_id.into() {
-					*curr_block_fee_sum = (*curr_block_fee_sum)
-						.saturating_add(<S as pallet_donations::Config>::Balance::from(amount));
-				}
-			},
-			_ => {},
+		let filtered_events = events.into_iter().filter_map(|event_record| {
+			let balances_event =
+				<S as pallet_donations::Config>::BalancesEvent::from(event_record.event);
+			balances_event.try_into().ok()
+		});
+
+		for filtered_event in filtered_events {
+			let treasury_id: AccountId = TreasuryPalletId::get().into_account();
+			match filtered_event {
+				<pallet_balances::Event<S>>::Deposit { who, amount } => {
+					// If amount is deposited back into the account that paid for the transaction
+					// fees during the same transaction, then deduct it from the txn fee counter as
+					// a refund
+
+					log::info!("who: {:?} treasury account: {:?}", who, treasury_id);
+					if who == treasury_id.into() {
+						curr_block_fee_sum = (curr_block_fee_sum).saturating_add(amount.into());
+					}
+				},
+				_ => {},
+			}
 		}
+
+		curr_block_fee_sum
 	}
 }
 
@@ -513,7 +534,6 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_donations, Donations]
 		[pallet_treasury, Treasury]
-		[pallet_xcm, XCM]
 	);
 }
 
