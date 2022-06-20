@@ -40,6 +40,7 @@ sp-std = { version = "4.0.0-dev", default-features = false, git = "https://githu
 sp-transaction-pool = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.18" }
 sp-version = { version = "5.0.0", default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.18" }
 pallet-xcm = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
+pallet-xcm-benchmarks = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18", optional = true}
 xcm = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
 xcm-builder = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
 xcm-executor = { default-features = false, git = "https://github.com/paritytech/polkadot", branch = "release-v0.9.18" }
@@ -80,6 +81,7 @@ std = [
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
+	"pallet-xcm/std",
 	"sp-api/std",
 	"sp-block-builder/std",
 	"sp-consensus-aura/std",
@@ -92,6 +94,9 @@ std = [
 	"sp-transaction-pool/std",
 	"sp-version/std",
 	"cumulus-primitives-utility/std",
+	"xcm/std",
+	"xcm-executor/std",
+	"xcm-builder/std",
 ]
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
@@ -103,4 +108,8 @@ runtime-benchmarks = [
 	"pallet-donations/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
+	"pallet-xcm-benchmarks",
+	"pallet-treasury/runtime-benchmarks",
+	"pallet-xcm/runtime-benchmarks",
+	"xcm-builder/runtime-benchmarks",
 ]

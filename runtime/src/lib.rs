@@ -534,7 +534,6 @@ mod benches {
 		[pallet_timestamp, Timestamp]
 		[pallet_donations, Donations]
 		[pallet_treasury, Treasury]
-		[pallet_xcm, XCM]
 	);
 }
 

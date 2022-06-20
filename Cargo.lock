@@ -3681,6 +3681,7 @@ dependencies = [
  "pallet-transaction-payment-rpc-runtime-api",
  "pallet-treasury",
  "pallet-xcm",
+ "pallet-xcm-benchmarks",
  "parity-scale-codec",
  "scale-info",
  "sp-api",
@@ -3936,7 +3937,7 @@ dependencies = [
 [[package]]
 name = "pallet-donations"
 version = "4.0.0-dev"
-source = "git+https://github.com/SequesterChain/pallets.git#2e75ec3c9bcf9b70de91a10ea1aa36eec7d989ea"
+source = "git+https://github.com/SequesterChain/pallets.git#31671508fa4614f3112909bee919319b8bf10eaa"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -4094,6 +4095,7 @@ name = "pallet-treasury"
 version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate.git?branch=polkadot-v0.9.18#fc3fd073d3a0acf9933c3994b660ebd7b5833f65"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "impl-trait-for-tuples",
@@ -4117,6 +4119,23 @@ dependencies = [
  "scale-info",
  "serde",
  "sp-core",
+ "sp-runtime",
+ "sp-std",
+ "xcm",
+ "xcm-executor",
+]
+
+[[package]]
+name = "pallet-xcm-benchmarks"
+version = "0.9.18"
+source = "git+https://github.com/paritytech/polkadot?branch=release-v0.9.18#9ed0c98204d25eaad8a6b40248daee8e6a40d111"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "parity-scale-codec",
+ "scale-info",
  "sp-runtime",
  "sp-std",
  "xcm",
@@ -6249,9 +6268,9 @@ dependencies = [
 
 [[package]]
 name = "signature"
-version = "1.5.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f054c6c1a6e95179d6f23ed974060dcefb2d9388bb7256900badad682c499de4"
+checksum = "02658e48d89f2bec991f9a78e69cfa4c316f8d6a6c4ec12fae1aeb263d486788"
 
 [[package]]
 name = "simba"
@@ -7539,7 +7558,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 1.0.0",
+ "cfg-if 0.1.10",
  "digest 0.10.3",
  "rand 0.8.5",
  "static_assertions",
@@ -8261,6 +8280,7 @@ name = "xcm-executor"
 version = "0.9.18"
 source = "git+https://github.com/paritytech/polkadot?branch=release-v0.9.18#9ed0c98204d25eaad8a6b40248daee8e6a40d111"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "impl-trait-for-tuples",
  "log",
