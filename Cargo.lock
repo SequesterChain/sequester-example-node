@@ -3937,7 +3937,7 @@ dependencies = [
 [[package]]
 name = "pallet-donations"
 version = "4.0.0-dev"
-source = "git+https://github.com/SequesterChain/pallets.git#31671508fa4614f3112909bee919319b8bf10eaa"
+source = "git+https://github.com/SequesterChain/pallets.git#bcbe44b3a1b43e1dc1b32fca9f4036c924ce4360"
 dependencies = [
  "frame-benchmarking",
  "frame-support",
@@ -7558,7 +7558,7 @@ version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "digest 0.10.3",
  "rand 0.8.5",
  "static_assertions",

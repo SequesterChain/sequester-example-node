@@ -324,7 +324,7 @@ impl pallet_sudo::Config for Runtime {
 
 parameter_types! {
 	pub const UnsignedPriority: u64 = 99999999;
-	pub const SendInterval: BlockNumber = 9;
+	pub const OnChainUpdateInterval: BlockNumber = 9;
 	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
 	pub SequesterTransferWeight: Weight = 100000000000;
 	pub SequesterTransferFee: Balance = 10000000;
@@ -349,7 +349,7 @@ impl pallet_donations::Config for Runtime {
 	type Event = Event;
 	type BalancesEvent = Event;
 	type UnsignedPriority = UnsignedPriority;
-	type SendInterval = SendInterval;
+	type OnChainUpdateInterval = OnChainUpdateInterval;
 	type TxnFeePercentage = TxnFeePercentage;
 	type FeeCalculator = TransactionFeeCalculator<Self>;
 	type AccountIdToMultiLocation = SequesterAccountIdToMultiLocation;
@@ -438,7 +438,7 @@ where
 	BalanceOf<S>: From<<S as pallet_balances::Config>::Balance>,
 	BalanceOf<S>: Into<<S as pallet_balances::Config>::Balance>,
 {
-	fn match_events(
+	fn calculate_fees_from_events(
 		events: Vec<
 			EventRecord<<S as frame_system::Config>::Event, <S as frame_system::Config>::Hash>,
 		>,
