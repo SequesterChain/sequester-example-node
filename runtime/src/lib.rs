@@ -1,47 +1,60 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 // `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
 #![recursion_limit = "256"]
+#![feature(more_qualified_paths)]
 
 // Make the WASM binary available.
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use frame_support::traits::Everything;
+use frame_system::{EnsureRoot, EventRecord};
 use pallet_grandpa::{
 	fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList,
 };
+use pallet_treasury::BalanceOf;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
-	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, NumberFor, Verify},
+	traits::{
+		AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, Convert,
+		IdentifyAccount, NumberFor, Saturating, Verify, Zero,
+	},
 	transaction_validity::{TransactionSource, TransactionValidity},
-	ApplyExtrinsicResult, MultiSignature,
+	ApplyExtrinsicResult, MultiSignature, Percent,
 };
 use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
+use xcm::latest::prelude::*;
+use xcm_builder::{FixedWeightBounds, LocationInverter, SignedToAccountId32};
 
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
 	construct_runtime, parameter_types,
-	traits::{ConstU128, ConstU32, ConstU8, KeyOwnerProofSystem, Randomness, StorageInfo},
+	traits::{
+		ConstU128, ConstU32, ConstU8, Currency, EnsureOneOf, Imbalance, KeyOwnerProofSystem,
+		OnUnbalanced, Randomness, StorageInfo,
+	},
 	weights::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
 		IdentityFee, Weight,
 	},
-	StorageValue,
+	PalletId, StorageValue,
 };
 pub use pallet_balances::Call as BalancesCall;
+use pallet_donations::FeeCalculator;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 
-/// Import the template pallet.
-pub use pallet_template;
+/// Import the donations pallet.
+pub use pallet_donations;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -61,6 +74,10 @@ pub type Index = u32;
 
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
+
+pub type NegativeImbalance<T> = <pallet_balances::Pallet<T> as Currency<
+	<T as frame_system::Config>::AccountId,
+>>::NegativeImbalance;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -250,11 +267,50 @@ impl pallet_balances::Config for Runtime {
 }
 
 parameter_types! {
+	pub const ProposalBond: Permill = Permill::from_percent(5);
+	pub const ProposalBondMinimum: Balance = 10000;
+	pub const ProposalBondMaximum: Balance = 50000;
+	pub const SpendPeriod: BlockNumber = 5;
+	pub const Burn: Permill = Permill::from_percent(0);
+	pub const TreasuryPalletId: PalletId = PalletId(*b"py/trsry");
+
+	pub const TipCountdown: BlockNumber = 1 * DAYS;
+	pub const TipFindersFee: Percent = Percent::from_percent(20);
+	pub const TipReportDepositBase: Balance = 100;
+	pub const DataDepositPerByte: Balance = 1;
+	pub const MaxApprovals: u32 = 100;
+	pub const MaxAuthorities: u32 = 100_000;
+	pub const MaxKeys: u32 = 10_000;
+	pub const MaxPeerInHeartbeats: u32 = 10_000;
+	pub const MaxPeerDataEncodingSize: u32 = 1_000;
+}
+
+type ApproveOrigin = EnsureRoot<AccountId>;
+
+impl pallet_treasury::Config for Runtime {
+	type PalletId = TreasuryPalletId;
+	type Currency = Balances;
+	type ApproveOrigin = ApproveOrigin;
+	type RejectOrigin = ApproveOrigin;
+	type Event = Event;
+	type OnSlash = Treasury;
+	type ProposalBond = ProposalBond;
+	type ProposalBondMinimum = ProposalBondMinimum;
+	type ProposalBondMaximum = ProposalBondMaximum;
+	type SpendPeriod = SpendPeriod;
+	type Burn = Burn;
+	type BurnDestination = ();
+	type SpendFunds = Donations;
+	type MaxApprovals = MaxApprovals;
+	type WeightInfo = ();
+}
+
+parameter_types! {
 	pub const TransactionByteFee: Balance = 1;
 }
 
 impl pallet_transaction_payment::Config for Runtime {
-	type OnChargeTransaction = CurrencyAdapter<Balances, ()>;
+	type OnChargeTransaction = CurrencyAdapter<Balances, DealWithFees<Self>>;
 	type TransactionByteFee = TransactionByteFee;
 	type OperationalFeeMultiplier = ConstU8<5>;
 	type WeightToFee = IdentityFee<Balance>;
@@ -266,9 +322,154 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
-/// Configure the pallet-template in pallets/template.
-impl pallet_template::Config for Runtime {
+parameter_types! {
+	pub const UnsignedPriority: u64 = 99999999;
+	pub const SendInterval: BlockNumber = 9;
+	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
+	pub SequesterTransferWeight: Weight = 100000000000;
+	pub SequesterTransferFee: Balance = 10000000;
+	pub ReserveMultiLocation: MultiLocation = MultiLocation::new(
+		1,
+		Junctions::X1(Junction::Parachain(1000)),
+	);
+	pub SequesterMultiLocation: MultiLocation = MultiLocation::new(
+		1,
+		Junctions::X1(Junction::Parachain(9999)),
+	);
+}
+
+pub struct SequesterAccountIdToMultiLocation;
+impl Convert<AccountId, MultiLocation> for SequesterAccountIdToMultiLocation {
+	fn convert(account: AccountId) -> MultiLocation {
+		X1(AccountId32 { network: NetworkId::Any, id: account.into() }).into()
+	}
+}
+
+impl pallet_donations::Config for Runtime {
 	type Event = Event;
+	type BalancesEvent = Event;
+	type UnsignedPriority = UnsignedPriority;
+	type SendInterval = SendInterval;
+	type TxnFeePercentage = TxnFeePercentage;
+	type FeeCalculator = TransactionFeeCalculator<Self>;
+	type AccountIdToMultiLocation = SequesterAccountIdToMultiLocation;
+	type SequesterTransferFee = SequesterTransferFee;
+	type SequesterTransferWeight = SequesterTransferWeight;
+	type ReserveMultiLocation = ReserveMultiLocation;
+	type SequesterMultiLocation = SequesterMultiLocation;
+}
+
+parameter_types! {
+	pub Ancestry: MultiLocation = Here.into();
+	pub const BaseXcmWeight: Weight = 10;
+	pub const MaxInstructions: u32 = 100;
+	pub const RelayNetwork: NetworkId = NetworkId::Any;
+}
+
+pub type LocalOriginToLocation = SignedToAccountId32<Origin, AccountId, RelayNetwork>;
+
+/// The means for routing XCM messages which are not for local execution into the right message
+/// queues.
+/// TODO: Fix for actual testing
+
+pub type XcmRouter = (
+	// Two routers - use UMP to communicate with the relay chain:
+	cumulus_primitives_utility::ParentAsUmp<(), ()>,
+	// ..and XCMP to communicate with the sibling chains.
+	(),
+);
+
+impl pallet_xcm::Config for Runtime {
+	type Event = Event;
+	type SendXcmOrigin = xcm_builder::EnsureXcmOrigin<Origin, LocalOriginToLocation>;
+	type XcmRouter = XcmRouter;
+	// Anyone can execute XCM messages locally...
+	type ExecuteXcmOrigin = xcm_builder::EnsureXcmOrigin<Origin, LocalOriginToLocation>;
+	type XcmExecuteFilter = Everything;
+	// TODO: Fix for actual testing
+	type XcmExecutor = ();
+	type XcmTeleportFilter = Everything;
+	type XcmReserveTransferFilter = Everything;
+	type Weigher = FixedWeightBounds<BaseXcmWeight, Call, MaxInstructions>;
+	type LocationInverter = LocationInverter<Ancestry>;
+	type Origin = Origin;
+	type Call = Call;
+	const VERSION_DISCOVERY_QUEUE_SIZE: u32 = 100;
+	type AdvertisedXcmVersion = pallet_xcm::CurrentXcmVersion;
+}
+
+impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
+where
+	Call: From<C>,
+{
+	type OverarchingCall = Call;
+	type Extrinsic = UncheckedExtrinsic;
+}
+
+pub struct DealWithFees<R>(sp_std::marker::PhantomData<R>);
+impl<R> OnUnbalanced<NegativeImbalance<R>> for DealWithFees<R>
+where
+	R: pallet_balances::Config + pallet_treasury::Config,
+	pallet_treasury::Pallet<R>: OnUnbalanced<NegativeImbalance<R>>,
+	// <R as frame_system::Config>::AccountId: From<primitives::v2::AccountId>,
+	// <R as frame_system::Config>::AccountId: Into<primitives::v2::AccountId>,
+	<R as frame_system::Config>::Event: From<pallet_balances::Event<R>>,
+{
+	fn on_unbalanceds<B>(mut fees_then_tips: impl Iterator<Item = NegativeImbalance<R>>) {
+		if let Some(fees) = fees_then_tips.next() {
+			// for fees, 80% to treasury, 20% to author
+			let mut split = fees.ration(100, 0);
+			if let Some(tips) = fees_then_tips.next() {
+				// for tips, if any, 100% to author
+				tips.merge_into(&mut split.1);
+			}
+			use pallet_treasury::Pallet as Treasury;
+			<Treasury<R> as OnUnbalanced<_>>::on_unbalanced(split.0);
+		}
+	}
+}
+
+pub struct TransactionFeeCalculator<S>(sp_std::marker::PhantomData<S>);
+impl<S> FeeCalculator<S> for TransactionFeeCalculator<S>
+where
+	S: pallet_balances::Config + pallet_donations::Config,
+	<S as frame_system::Config>::AccountId: From<AccountId>,
+	<S as frame_system::Config>::AccountId: Into<AccountId>,
+	BalanceOf<S>: From<<S as pallet_balances::Config>::Balance>,
+	BalanceOf<S>: Into<<S as pallet_balances::Config>::Balance>,
+{
+	fn match_events(
+		events: Vec<
+			EventRecord<<S as frame_system::Config>::Event, <S as frame_system::Config>::Hash>,
+		>,
+	) -> BalanceOf<S> {
+		let mut curr_block_fee_sum: BalanceOf<S> = Zero::zero();
+
+		let filtered_events = events.into_iter().filter_map(|event_record| {
+			let balances_event =
+				<S as pallet_donations::Config>::BalancesEvent::from(event_record.event);
+			balances_event.try_into().ok()
+		});
+
+		for filtered_event in filtered_events {
+			let treasury_id: AccountId = TreasuryPalletId::get().into_account();
+			match filtered_event {
+				<pallet_balances::Event<S>>::Deposit { who, amount } => {
+					// If amount is deposited back into the account that paid for the transaction
+					// fees during the same transaction, then deduct it from the txn fee counter as
+					// a refund
+
+					log::info!("who: {:?} treasury account: {:?}", who, treasury_id);
+					if who == treasury_id.into() {
+						curr_block_fee_sum = (curr_block_fee_sum).saturating_add(amount.into());
+					}
+				},
+				_ => {},
+			}
+		}
+
+		curr_block_fee_sum
+	}
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -284,10 +485,11 @@ construct_runtime!(
 		Aura: pallet_aura,
 		Grandpa: pallet_grandpa,
 		Balances: pallet_balances,
+		Treasury: pallet_treasury,
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
-		// Include the custom logic from the pallet-template in the runtime.
-		TemplateModule: pallet_template,
+		Donations: pallet_donations::{Pallet, Call, Event<T>, ValidateUnsigned},
+		XCM: pallet_xcm,
 	}
 );
 
@@ -330,7 +532,8 @@ mod benches {
 		[frame_system, SystemBench::<Runtime>]
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
-		[pallet_template, TemplateModule]
+		[pallet_donations, Donations]
+		[pallet_treasury, Treasury]
 	);
 }
 
