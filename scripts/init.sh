@@ -9,4 +9,8 @@ if [ -z $CI_PROJECT_NAME ] ; then
    rustup update stable
 fi
 
+rustup default nightly
 rustup target add wasm32-unknown-unknown --toolchain nightly
+
+// ensure docker_run.sh is executable
+chmod +x ./scripts/docker_run.sh
