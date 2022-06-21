@@ -268,8 +268,8 @@ impl pallet_balances::Config for Runtime {
 
 parameter_types! {
 	pub const ProposalBond: Permill = Permill::from_percent(5);
-	pub const ProposalBondMinimum: Balance = 10000;
-	pub const ProposalBondMaximum: Balance = 50000;
+	pub const ProposalBondMinimum: Balance = 10_000;
+	pub const ProposalBondMaximum: Balance = 50_000;
 	pub const SpendPeriod: BlockNumber = 5;
 	pub const Burn: Permill = Permill::from_percent(0);
 	pub const TreasuryPalletId: PalletId = PalletId(*b"py/trsry");
@@ -323,11 +323,11 @@ impl pallet_sudo::Config for Runtime {
 }
 
 parameter_types! {
-	pub const UnsignedPriority: u64 = 99999999;
+	pub const UnsignedPriority: u64 = 99_999_999;
 	pub const OnChainUpdateInterval: BlockNumber = 9;
 	pub const TxnFeePercentage: Percent = Percent::from_percent(10);
-	pub SequesterTransferWeight: Weight = 100000000000;
-	pub SequesterTransferFee: Balance = 10000000;
+	pub SequesterTransferWeight: Weight = 10_000_000;
+	pub SequesterTransferFee: Balance = 10_000_000;
 	pub ReserveMultiLocation: MultiLocation = MultiLocation::new(
 		1,
 		Junctions::X1(Junction::Parachain(1000)),
@@ -460,7 +460,6 @@ where
 					// fees during the same transaction, then deduct it from the txn fee counter as
 					// a refund
 
-					log::info!("who: {:?} treasury account: {:?}", who, treasury_id);
 					if who == treasury_id.into() {
 						curr_block_fee_sum = (curr_block_fee_sum).saturating_add(amount.into());
 					}
