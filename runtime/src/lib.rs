@@ -456,10 +456,6 @@ where
 			let treasury_id: AccountId = TreasuryPalletId::get().into_account();
 			match filtered_event {
 				<pallet_balances::Event<S>>::Deposit { who, amount } => {
-					// If amount is deposited back into the account that paid for the transaction
-					// fees during the same transaction, then deduct it from the txn fee counter as
-					// a refund
-
 					if who == treasury_id.into() {
 						curr_block_fee_sum = (curr_block_fee_sum).saturating_add(amount.into());
 					}
