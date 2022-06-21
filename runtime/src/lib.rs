@@ -357,6 +357,7 @@ impl pallet_donations::Config for Runtime {
 	type SequesterTransferWeight = SequesterTransferWeight;
 	type ReserveMultiLocation = ReserveMultiLocation;
 	type SequesterMultiLocation = SequesterMultiLocation;
+	type WeightInfo = ();
 }
 
 parameter_types! {
