@@ -4,7 +4,7 @@ run-dev:
 
 .PHONY: build-release
 build-release:
-	cargo build --release
+	cargo +nightly build --release
 
 .PHONY: purge-dev
 purge-dev:
@@ -13,7 +13,3 @@ purge-dev:
 .PHONY: init
 init:
 	./scripts/init.sh
-
-.PHONY: test
-test:
-	SKIP_WASM_BUILD=1 cargo test --release --all

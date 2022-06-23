@@ -48,13 +48,8 @@ We've integrated the [Sequester donations pallet](https://github.com/SequesterCh
 
 ### Testing
 
-In order to test the donations pallet, run the following command:
 
-```bash
-make test
-```
-
-Additionally, you can use the Substrate Front-end template and send funds between accounts to see Sequester pallet in action.
+You can use the Substrate Front-end template and send funds between accounts to see Sequester pallet in action.
 
 Instructions to install and run the front-end template can be found [in this Substrate tutorial.](https://docs.substrate.io/tutorials/v3/create-your-first-substrate-chain/#install-the-front-end-template).
 
