@@ -347,11 +347,11 @@ impl Convert<AccountId, MultiLocation> for SequesterAccountIdToMultiLocation {
 
 impl pallet_donations::Config for Runtime {
 	type Event = Event;
-	type BalancesEvent = Event;
+	type TransactionFeeEvent = Event;
+	type BalanceConverter = Balance;
 	type UnsignedPriority = UnsignedPriority;
 	type OnChainUpdateInterval = OnChainUpdateInterval;
 	type TxnFeePercentage = TxnFeePercentage;
-	type FeeCalculator = TransactionFeeCalculator<Self>;
 	type AccountIdToMultiLocation = SequesterAccountIdToMultiLocation;
 	type SequesterTransferFee = SequesterTransferFee;
 	type SequesterTransferWeight = SequesterTransferWeight;
@@ -427,44 +427,6 @@ where
 			use pallet_treasury::Pallet as Treasury;
 			<Treasury<R> as OnUnbalanced<_>>::on_unbalanced(split.0);
 		}
-	}
-}
-
-pub struct TransactionFeeCalculator<S>(sp_std::marker::PhantomData<S>);
-impl<S> FeeCalculator<S> for TransactionFeeCalculator<S>
-where
-	S: pallet_balances::Config + pallet_donations::Config,
-	<S as frame_system::Config>::AccountId: From<AccountId>,
-	<S as frame_system::Config>::AccountId: Into<AccountId>,
-	BalanceOf<S>: From<<S as pallet_balances::Config>::Balance>,
-	BalanceOf<S>: Into<<S as pallet_balances::Config>::Balance>,
-{
-	fn calculate_fees_from_events(
-		events: Vec<
-			EventRecord<<S as frame_system::Config>::Event, <S as frame_system::Config>::Hash>,
-		>,
-	) -> BalanceOf<S> {
-		let mut curr_block_fee_sum: BalanceOf<S> = Zero::zero();
-
-		let filtered_events = events.into_iter().filter_map(|event_record| {
-			let balances_event =
-				<S as pallet_donations::Config>::BalancesEvent::from(event_record.event);
-			balances_event.try_into().ok()
-		});
-
-		for filtered_event in filtered_events {
-			let treasury_id: AccountId = TreasuryPalletId::get().into_account();
-			match filtered_event {
-				<pallet_balances::Event<S>>::Deposit { who, amount } => {
-					if who == treasury_id.into() {
-						curr_block_fee_sum = (curr_block_fee_sum).saturating_add(amount.into());
-					}
-				},
-				_ => {},
-			}
-		}
-
-		curr_block_fee_sum
 	}
 }
 
